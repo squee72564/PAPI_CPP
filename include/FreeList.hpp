@@ -91,71 +91,163 @@ private:
         size_--;
     }
 
-    template <typename Compare = std::less<T> >
-    size_t merge(const size_t first, const size_t second, size_t& tail, const Compare& comp = Compare()) {
-        if (first == SIZE_MAX) return second;
-        if (second == SIZE_MAX) return first;
 
-        size_t result = SIZE_MAX;
+    template <typename Compare = std::less<T>>
+    size_t mergeIterative(size_t left, size_t right, size_t& tail_out, const Compare& comp = Compare()) {
+        if (left == SIZE_MAX) return right;
+        if (right == SIZE_MAX) return left;
+        
+        // Create a dummy head to simplify the implementation
+        size_t dummy_head = SIZE_MAX;
+        size_t* current = &dummy_head;
+        
+        size_t left_ptr = left;
+        size_t right_ptr = right;
+        
+        while (left_ptr != SIZE_MAX && right_ptr != SIZE_MAX) {
+		if (comp(nodes[left_ptr].data, nodes[right_ptr].data)) {
+		    *current = left_ptr;
+		    current = &nodes[left_ptr].next;
+		    left_ptr = nodes[left_ptr].next;
+		} else {
+		    *current = right_ptr;
+		    current = &nodes[right_ptr].next;
+		    right_ptr = nodes[right_ptr].next;
+		}
+        }
+        
+        // Attach the remaining list
+        *current = (left_ptr != SIZE_MAX) ? left_ptr : right_ptr;
+        
+        // Fix prev pointers and find the tail
+        size_t result = dummy_head;
+        size_t prev = SIZE_MAX;
+        size_t curr = result;
+        
+        while (curr != SIZE_MAX) {
+		nodes[curr].prev = prev;
+		prev = curr;
+		curr = nodes[curr].next;
+        }
+        
+        tail_out = prev;
+        return dummy_head;
+    }
 
-        if (comp(nodes[first].data, nodes[second].data)) {
-            result = first;
-
-            nodes[first].next = merge(nodes[first].next, second, tail, comp);
-            if (nodes[first].next != SIZE_MAX) {
-                nodes[nodes[first].next].prev = first;
-            } else {
-                tail = first;
+    template <typename Compare = std::less<T>>
+    void bottomUpMergeSortRange(size_t start_idx, size_t end_idx, const Compare& comp = Compare()) {
+        if (empty() || start_idx == SIZE_MAX || (start_idx == end_idx && end_idx != SIZE_MAX)) return;
+        
+        // If end_idx is SIZE_MAX, we want to sort to the end of the list
+        if (end_idx == SIZE_MAX) {
+            end_idx = tail;
+        }
+        
+        // Save connections to the rest of the list
+        size_t before_range = nodes[start_idx].prev;
+        size_t after_range = nodes[end_idx].next;
+        
+        // Disconnect the range
+        if (before_range != SIZE_MAX) {
+            nodes[before_range].next = SIZE_MAX;
+        }
+        nodes[start_idx].prev = SIZE_MAX;
+        
+        if (after_range != SIZE_MAX) {
+            nodes[after_range].prev = SIZE_MAX;
+        }
+        nodes[end_idx].next = SIZE_MAX;
+        
+        // Count elements in our range
+        size_t range_size = 1;
+        size_t curr = start_idx;
+        while (curr != end_idx) {
+            range_size++;
+            curr = nodes[curr].next;
+        }
+        
+        // Bottom-up merge sort on the isolated range
+        for (size_t sublist_size = 1; sublist_size < range_size; sublist_size *= 2) {
+            size_t current_head = SIZE_MAX;
+            size_t current_tail = SIZE_MAX;
+            
+            size_t remaining = start_idx;
+            
+            while (remaining != SIZE_MAX) {
+                // Extract first sublist
+                size_t list1_head = remaining;
+                size_t list1_tail = list1_head;
+                
+                for (size_t i = 1; i < sublist_size && nodes[list1_tail].next != SIZE_MAX; ++i) {
+                    list1_tail = nodes[list1_tail].next;
+                }
+                
+                remaining = nodes[list1_tail].next;
+                
+                if (remaining != SIZE_MAX) {
+                    nodes[list1_tail].next = SIZE_MAX;
+                    nodes[remaining].prev = SIZE_MAX;
+                }
+                
+                if (remaining == SIZE_MAX) {
+                    if (current_head == SIZE_MAX) {
+                        current_head = list1_head;
+                        current_tail = list1_tail;
+                    } else {
+                        nodes[current_tail].next = list1_head;
+                        nodes[list1_head].prev = current_tail;
+                        current_tail = list1_tail;
+                    }
+                    continue;
+                }
+                
+                // Extract second sublist
+                size_t list2_head = remaining;
+                size_t list2_tail = list2_head;
+                
+                for (size_t i = 1; i < sublist_size && nodes[list2_tail].next != SIZE_MAX; ++i) {
+                    list2_tail = nodes[list2_tail].next;
+                }
+                
+                remaining = nodes[list2_tail].next;
+                
+                if (remaining != SIZE_MAX) {
+                    nodes[list2_tail].next = SIZE_MAX;
+                    nodes[remaining].prev = SIZE_MAX;
+                }
+                
+                // Merge the two sublists
+                size_t merged_tail = SIZE_MAX;
+                size_t merged_head = mergeIterative(list1_head, list2_head, merged_tail, comp);
+                
+                if (current_head == SIZE_MAX) {
+                    current_head = merged_head;
+                    current_tail = merged_tail;
+                } else {
+                    nodes[current_tail].next = merged_head;
+                    nodes[merged_head].prev = current_tail;
+                    current_tail = merged_tail;
+                }
             }
-            nodes[first].prev = SIZE_MAX;
+            
+            start_idx = current_head;
+            end_idx = current_tail;
+        }
+        
+        // Reconnect the sorted range
+        if (before_range != SIZE_MAX) {
+            nodes[before_range].next = start_idx;
+            nodes[start_idx].prev = before_range;
         } else {
-            result = second;
-
-            nodes[second].next = merge(first, nodes[second].next, tail, comp);
-            if (nodes[second].next != SIZE_MAX) {
-                nodes[nodes[second].next].prev = second;
-            } else {
-                tail = second;
-            }
-            nodes[second].prev = SIZE_MAX;
+            head = start_idx;
         }
-        return result;
-    }
-
-    std::pair<size_t,size_t> split(const size_t start, const size_t end) {
-        if (start == end) return {start, start};
-
-        size_t slow = start;
-        size_t fast = start;
-
-        while (fast != end && nodes[fast].next != end) {
-            slow = nodes[slow].next;
-            fast = nodes[nodes[fast].next].next;
+        
+        if (after_range != SIZE_MAX) {
+            nodes[end_idx].next = after_range;
+            nodes[after_range].prev = end_idx;
+        } else {
+            tail = end_idx;
         }
-
-        size_t second_half = nodes[slow].next;
-        nodes[slow].next = SIZE_MAX;
-
-        if (second_half != SIZE_MAX) {
-            nodes[second_half].prev = SIZE_MAX;
-        }
-        return {second_half,slow};
-    }
-
-    template <typename Compare = std::less<T> >
-    size_t mergeSort(size_t start, size_t end, const Compare& comp = Compare()) {
-        if (start == SIZE_MAX || start == end) return start;
-
-        auto [second_half_start, start_end] = split(start, end);
-
-        start = mergeSort(start, start_end, comp);
-        second_half_start = mergeSort(second_half_start, end, comp);
-
-        size_t _tail = SIZE_MAX;
-        size_t _head = merge(start, second_half_start, _tail, comp);
-        tail = _tail;
-
-        return _head;
     }
 
 public:
@@ -360,17 +452,16 @@ public:
     }
 
     template <typename Iterator>
-    FreeList(Iterator first, Iterator last) : FreeList() {
+    FreeList(
+	Iterator first,
+	Iterator last,
+	typename std::enable_if<!std::is_same<typename std::iterator_traits<Iterator>::value_type, T>::value>::type* = nullptr)
+    	: FreeList()
+    {
         for (auto it = first; it != last; ++it) {
             push_back(*it);
         }
     }
-
-    //FreeList(const_iterator first, const_iterator last) : FreeList() {
-    //    for (auto it = first; it != last; ++it) {
-    //        push_back(*it);
-    //    }
-    //}
 
     FreeList(std::initializer_list<T> init) : FreeList() {
         for (const auto& value : init) {
@@ -385,11 +476,13 @@ public:
     FreeList& operator=(const FreeList& other) = default;
     FreeList& operator=(FreeList&& other) noexcept = default;
 
+
     template <typename Compare = std::less<T> >
     void sort(const Compare& comp = Compare()) {
         if (empty()) return;
 
-        head = mergeSort(head, tail, comp);
+        //head = mergeSort(head, tail, comp);
+	bottomUpMergeSortRange(head, tail, comp);
     }
 
     template <typename Compare = std::less<T> >
@@ -399,13 +492,11 @@ public:
     {
         if (empty() || start == end() || start == _end) return;
 
-        iterator actualStart = (start == const_iterator()) ? cbegin() : start;
-        iterator actualEnd = (_end == const_iterator()) ? cend() : _end;
+        size_t start_idx = start.getIndex();
+        size_t end_idx = (_end == end()) ? tail : _end.prev().getIndex();
 
-        size_t start_idx = actualStart.getIndex();
-        size_t end_idx = (actualEnd == cend()) ? tail : _end.getIndex();
-
-        head = mergeSort(start_idx, end_idx, comp);
+        //head = mergeSort(start_idx, end_idx, comp);
+	bottomUpMergeSortRange(start_idx, end_idx, comp);
     }
 
     void reserve(size_t count) {

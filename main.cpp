@@ -6,20 +6,18 @@
 #include "FreeList.hpp"
 
 int main() {
-	std::vector<int> v;
-
-	for (int i = 400000; i >= 0; --i) {
-		v.emplace_back(i);
-	}
-
 
 	try {
+		std::vector<int> v;
+
+		for (int i = 9999999; i >= 0; --i) {
+			v.emplace_back(i);
+		}
+
 		papi::event_set<
-			PAPI_L1_ICM,
-			PAPI_L1_DCA,
-			PAPI_L2_DCM,
-			PAPI_L2_DCH,
-			PAPI_L2_DCR
+			PAPI_L1_TCA,
+			PAPI_TLB_DM,
+			PAPI_TLB_IM
 		> events;
 
 		events.start_counters();
