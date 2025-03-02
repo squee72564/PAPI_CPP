@@ -37,9 +37,7 @@ To check available preset events, run the following:
 
 ## Using PapiCPP
 
-PAPI_CPP makes use of templates to allow you to pass in the preset event codes from
-
-the PAPI C library. Use these event codes with the C++ `papi::event_set` wrapper class and it will handle all initialization, and de-initialization for the underlying PAPI code.
+PAPI_CPP makes use of templates to allow you to pass in the preset event codes from the PAPI C library. Use these event codes with the C++ `papi::event_set` wrapper class and it will handle all initialization, and de-initialization for the underlying PAPI code.
 
 Some brief example code may look like the following:
 
