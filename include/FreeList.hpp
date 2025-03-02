@@ -6,256 +6,80 @@
 #include <limits>
 #include <cstddef>
 #include <cstdint>
+#include <execution>
 
 template<typename T>
 class FreeList {
 private:
-    struct Node {
-        T data;
-        size_t next;
-        size_t prev;
-        size_t nextFree;
-
-        Node(const T& data) : data(data), next(SIZE_MAX), prev(SIZE_MAX), nextFree(SIZE_MAX) {}
-        Node(T&& data) : data(std::move(data)), next(SIZE_MAX), prev(SIZE_MAX), nextFree(SIZE_MAX) {}
-        Node() : data(T{}), next(SIZE_MAX), prev(SIZE_MAX), nextFree(SIZE_MAX) {}
-        ~Node() = default;
-
-        Node(const Node&) = default;
-        Node(Node&&) noexcept = default;
-        Node& operator=(const Node&) = default;
-        Node& operator=(Node&&) noexcept = default;
-    };
-
-    std::vector<Node> nodes;
+    // Structure of Arrays (SoA) approach
+    std::vector<size_t> next_indices;  // Linked list "next" pointers
+    std::vector<size_t> prev_indices;  // Linked list "prev" pointers
+    std::vector<size_t> next_free;     // Free list management
+    std::vector<T> data;               // Actual data values
+    
+    // List endpoints and size
     size_t head;
     size_t tail;
     size_t freeHead;
     size_t size_;
 
+    // Helper methods
     template <typename U>
-    size_t allocateNode(U&& data) {
+    size_t allocateNode(U&& value) {
         size_t index;
 
         if (freeHead != SIZE_MAX) {
+            // Reuse a freed node
             index = freeHead;
-            freeHead = nodes[freeHead].nextFree;
-            nodes[index] = Node(std::forward<T>(data));
+            freeHead = next_free[freeHead];
+            data[index] = std::forward<U>(value);
+            next_indices[index] = SIZE_MAX;
+            prev_indices[index] = SIZE_MAX;
         } else {
-            index = nodes.size();
-            nodes.emplace_back(std::forward<T>(data));
+            // Allocate new node
+            index = data.size();
+            data.emplace_back(std::forward<U>(value));
+            next_indices.push_back(SIZE_MAX);
+            prev_indices.push_back(SIZE_MAX);
+            next_free.push_back(SIZE_MAX);
         }
 
         size_++;
         return index;
     }
-
-    size_t allocateNode(const T& data) {
-        size_t index;
-
-        if (freeHead != SIZE_MAX) {
-            index = freeHead;
-            freeHead = nodes[freeHead].nextFree;
-            nodes[index] = Node(data);
-        } else {
-            index = nodes.size();
-            nodes.emplace_back(data);
-        }
-
-        size_++;
-
-        return index;
-    }
-
+    
     void remove(size_t index) {
-        if (index >= nodes.size()) return;
+        if (index >= data.size()) return;
 
-        size_t nextIndex = nodes[index].next;
-        size_t prevIndex = nodes[index].prev;
+        // Update linked list pointers
+        size_t nextIndex = next_indices[index];
+        size_t prevIndex = prev_indices[index];
 
         if (prevIndex == SIZE_MAX) {
             head = nextIndex;
         } else {
-            nodes[prevIndex].next = nextIndex;
+            next_indices[prevIndex] = nextIndex;
         }
 
         if (nextIndex == SIZE_MAX) {
             tail = prevIndex;
         } else {
-            nodes[nextIndex].prev = prevIndex;
+            prev_indices[nextIndex] = prevIndex;
         }
 
-        nodes[index].nextFree = freeHead;
+        // Add to free list
+        next_free[index] = freeHead;
         freeHead = index;
 
         size_--;
-    }
-
-
-    template <typename Compare = std::less<T>>
-    size_t mergeIterative(size_t left, size_t right, size_t& tail_out, const Compare& comp = Compare()) {
-        if (left == SIZE_MAX) return right;
-        if (right == SIZE_MAX) return left;
-        
-        // Create a dummy head to simplify the implementation
-        size_t dummy_head = SIZE_MAX;
-        size_t* current = &dummy_head;
-        
-        size_t left_ptr = left;
-        size_t right_ptr = right;
-        
-        while (left_ptr != SIZE_MAX && right_ptr != SIZE_MAX) {
-		if (comp(nodes[left_ptr].data, nodes[right_ptr].data)) {
-		    *current = left_ptr;
-		    current = &nodes[left_ptr].next;
-		    left_ptr = nodes[left_ptr].next;
-		} else {
-		    *current = right_ptr;
-		    current = &nodes[right_ptr].next;
-		    right_ptr = nodes[right_ptr].next;
-		}
-        }
-        
-        // Attach the remaining list
-        *current = (left_ptr != SIZE_MAX) ? left_ptr : right_ptr;
-        
-        // Fix prev pointers and find the tail
-        size_t result = dummy_head;
-        size_t prev = SIZE_MAX;
-        size_t curr = result;
-        
-        while (curr != SIZE_MAX) {
-		nodes[curr].prev = prev;
-		prev = curr;
-		curr = nodes[curr].next;
-        }
-        
-        tail_out = prev;
-        return dummy_head;
-    }
-
-    template <typename Compare = std::less<T>>
-    void bottomUpMergeSortRange(size_t start_idx, size_t end_idx, const Compare& comp = Compare()) {
-        if (empty() || start_idx == SIZE_MAX || (start_idx == end_idx && end_idx != SIZE_MAX)) return;
-        
-        // If end_idx is SIZE_MAX, we want to sort to the end of the list
-        if (end_idx == SIZE_MAX) {
-            end_idx = tail;
-        }
-        
-        // Save connections to the rest of the list
-        size_t before_range = nodes[start_idx].prev;
-        size_t after_range = nodes[end_idx].next;
-        
-        // Disconnect the range
-        if (before_range != SIZE_MAX) {
-            nodes[before_range].next = SIZE_MAX;
-        }
-        nodes[start_idx].prev = SIZE_MAX;
-        
-        if (after_range != SIZE_MAX) {
-            nodes[after_range].prev = SIZE_MAX;
-        }
-        nodes[end_idx].next = SIZE_MAX;
-        
-        // Count elements in our range
-        size_t range_size = 1;
-        size_t curr = start_idx;
-        while (curr != end_idx) {
-            range_size++;
-            curr = nodes[curr].next;
-        }
-        
-        // Bottom-up merge sort on the isolated range
-        for (size_t sublist_size = 1; sublist_size < range_size; sublist_size *= 2) {
-            size_t current_head = SIZE_MAX;
-            size_t current_tail = SIZE_MAX;
-            
-            size_t remaining = start_idx;
-            
-            while (remaining != SIZE_MAX) {
-                // Extract first sublist
-                size_t list1_head = remaining;
-                size_t list1_tail = list1_head;
-                
-                for (size_t i = 1; i < sublist_size && nodes[list1_tail].next != SIZE_MAX; ++i) {
-                    list1_tail = nodes[list1_tail].next;
-                }
-                
-                remaining = nodes[list1_tail].next;
-                
-                if (remaining != SIZE_MAX) {
-                    nodes[list1_tail].next = SIZE_MAX;
-                    nodes[remaining].prev = SIZE_MAX;
-                }
-                
-                if (remaining == SIZE_MAX) {
-                    if (current_head == SIZE_MAX) {
-                        current_head = list1_head;
-                        current_tail = list1_tail;
-                    } else {
-                        nodes[current_tail].next = list1_head;
-                        nodes[list1_head].prev = current_tail;
-                        current_tail = list1_tail;
-                    }
-                    continue;
-                }
-                
-                // Extract second sublist
-                size_t list2_head = remaining;
-                size_t list2_tail = list2_head;
-                
-                for (size_t i = 1; i < sublist_size && nodes[list2_tail].next != SIZE_MAX; ++i) {
-                    list2_tail = nodes[list2_tail].next;
-                }
-                
-                remaining = nodes[list2_tail].next;
-                
-                if (remaining != SIZE_MAX) {
-                    nodes[list2_tail].next = SIZE_MAX;
-                    nodes[remaining].prev = SIZE_MAX;
-                }
-                
-                // Merge the two sublists
-                size_t merged_tail = SIZE_MAX;
-                size_t merged_head = mergeIterative(list1_head, list2_head, merged_tail, comp);
-                
-                if (current_head == SIZE_MAX) {
-                    current_head = merged_head;
-                    current_tail = merged_tail;
-                } else {
-                    nodes[current_tail].next = merged_head;
-                    nodes[merged_head].prev = current_tail;
-                    current_tail = merged_tail;
-                }
-            }
-            
-            start_idx = current_head;
-            end_idx = current_tail;
-        }
-        
-        // Reconnect the sorted range
-        if (before_range != SIZE_MAX) {
-            nodes[before_range].next = start_idx;
-            nodes[start_idx].prev = before_range;
-        } else {
-            head = start_idx;
-        }
-        
-        if (after_range != SIZE_MAX) {
-            nodes[end_idx].next = after_range;
-            nodes[after_range].prev = end_idx;
-        } else {
-            tail = end_idx;
-        }
     }
 
 public:
     using value_type = T;
 
     class Iterator {
-	friend class FreeList;
-	friend class ConstIterator;
+        friend class FreeList;
+        friend class ConstIterator;
 
     public:
         using iterator_category = std::bidirectional_iterator_tag;
@@ -278,24 +102,23 @@ public:
         Iterator& operator=(Iterator&&) noexcept = default;
 
         reference operator*() {
-            return list->nodes[index].data;
+            return list->data[index];
         }
 
         reference operator*() const {
-            return list->nodes[index].data;
+            return list->data[index];
         }
 
         pointer operator->() {
-            return &list->nodes[index].data;
+            return &list->data[index];
         }
 
         pointer operator->() const {
-            return &list->nodes[index].data;
+            return &list->data[index];
         }
 
-
         Iterator& operator++() {
-            index = list->nodes[index].next;
+            index = list->next_indices[index];
             return *this;
         }
 
@@ -306,11 +129,11 @@ public:
         }
 
         Iterator& operator--() {
-	    if (index == SIZE_MAX) {
-            index = list->tail;
-	    } else {
-            index = list->nodes[index].prev;
-	    }
+            if (index == SIZE_MAX) {
+                index = list->tail;
+            } else {
+                index = list->prev_indices[index];
+            }
             return *this;
         }
 
@@ -329,88 +152,86 @@ public:
         }
 
     private:
-
         size_t getIndex() const {
             return index;
         }
 
-	FreeList* getList() const {
-	    return list;
-	}
-	
+        FreeList* getList() const {
+            return list;
+        }
+        
         FreeList* list;
         size_t index;
     };
 
     class ConstIterator {
-	friend class FreeList;
+        friend class FreeList;
     public:
-	using iterator_category = std::bidirectional_iterator_tag;
-	using difference_type = std::ptrdiff_t;
-	using value_type = T;
-	using pointer = const T*;
-	using reference = const T&;
+        using iterator_category = std::bidirectional_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = T;
+        using pointer = const T*;
+        using reference = const T&;
 
-	ConstIterator() : list(nullptr), index(SIZE_MAX) {}
+        ConstIterator() : list(nullptr), index(SIZE_MAX) {}
 
-	ConstIterator(const FreeList* list, size_t index)
-	    : list(list), index(index) {}
+        ConstIterator(const FreeList* list, size_t index)
+            : list(list), index(index) {}
 
-	ConstIterator(const Iterator& it)
-	    : list(it.getList()), index(it.getIndex()) {}
+        ConstIterator(const Iterator& it)
+            : list(it.getList()), index(it.getIndex()) {}
 
-	ConstIterator(const ConstIterator&) = default;
-	ConstIterator(ConstIterator&&) noexcept = default;
-	ConstIterator& operator=(const ConstIterator&) = default;
-	ConstIterator& operator=(ConstIterator&&) noexcept = default;
+        ConstIterator(const ConstIterator&) = default;
+        ConstIterator(ConstIterator&&) noexcept = default;
+        ConstIterator& operator=(const ConstIterator&) = default;
+        ConstIterator& operator=(ConstIterator&&) noexcept = default;
 
-	reference operator*() const {
-	    return list->nodes[index].data;
-	}
+        reference operator*() const {
+            return list->data[index];
+        }
 
-	pointer operator->() const {
-	    return &list->nodes[index].data;
-	}
+        pointer operator->() const {
+            return &list->data[index];
+        }
 
-	ConstIterator& operator++() {
-	    index = list->nodes[index].next;
-	    return *this;
-	}
+        ConstIterator& operator++() {
+            index = list->next_indices[index];
+            return *this;
+        }
 
-	ConstIterator operator++(int) {
-	    ConstIterator temp = *this;
-	    ++(*this);
-	    return temp;
-	}
+        ConstIterator operator++(int) {
+            ConstIterator temp = *this;
+            ++(*this);
+            return temp;
+        }
 
-	ConstIterator& operator--() {
-	    if (index == SIZE_MAX) {
-            index = list->tail;
-	    } else {
-            index = list->nodes[index].prev;
-	    }
-	    return *this;
-	}
+        ConstIterator& operator--() {
+            if (index == SIZE_MAX) {
+                index = list->tail;
+            } else {
+                index = list->prev_indices[index];
+            }
+            return *this;
+        }
 
-	ConstIterator operator--(int) {
-	    ConstIterator temp = *this;
-	    --(*this);
-	    return temp;
-	}
+        ConstIterator operator--(int) {
+            ConstIterator temp = *this;
+            --(*this);
+            return temp;
+        }
 
-	bool operator==(const ConstIterator& other) const {
-	    return (index == other.index) && (list == other.list);
-	}
+        bool operator==(const ConstIterator& other) const {
+            return (index == other.index) && (list == other.list);
+        }
 
-	bool operator!=(const ConstIterator& other) const {
-	    return !(*this == other);
-	}
+        bool operator!=(const ConstIterator& other) const {
+            return !(*this == other);
+        }
 
     private:
-
-	size_t getIndex() const {
-	    return index;
-	}
+        size_t getIndex() const {
+            return index;
+        }
 
         const FreeList* list;
         size_t index;
@@ -421,6 +242,108 @@ public:
     using reverse_iterator = std::reverse_iterator<iterator>;
     using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
+    // Constructors
+    FreeList() : next_indices(), prev_indices(), next_free(), data(), 
+                 head(SIZE_MAX), tail(SIZE_MAX), freeHead(SIZE_MAX), size_(0) {}
+
+    FreeList(size_t count) : FreeList() {
+        reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            emplace_back(T{});
+        }
+    }
+
+    template <typename U>
+    FreeList(size_t count, U&& value) : FreeList() {
+        reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            emplace_back(std::forward<U>(value));
+        }
+    }
+
+    template <typename Iterator>
+    FreeList(
+        Iterator first,
+        Iterator last,
+        typename std::enable_if<!std::is_same<typename std::iterator_traits<Iterator>::value_type, T>::value>::type* = nullptr)
+        : FreeList()
+    {
+        auto n = std::distance(first, last);
+        reserve(n);
+        for (auto it = first; it != last; ++it) {
+            emplace_back(*it);
+        }
+    }
+    
+    template <typename Iterator>
+    FreeList(
+        Iterator first,
+        Iterator last,
+        typename std::enable_if<std::is_same<typename std::iterator_traits<Iterator>::value_type, T>::value>::type* = nullptr)
+        : FreeList()
+    {
+        auto n = std::distance(first, last);
+        reserve(n);
+        for (auto it = first; it != last; ++it) {
+            emplace_back(*it);
+        }
+    }
+
+    FreeList(std::initializer_list<T> init) : FreeList() {
+        reserve(init.size());
+        for (const auto& value : init) {
+            emplace_back(value);
+        }
+    }
+
+    ~FreeList() = default;
+
+    // Copy and move operations
+    FreeList(const FreeList& other) 
+        : next_indices(other.next_indices), prev_indices(other.prev_indices), 
+          next_free(other.next_free), data(other.data),
+          head(other.head), tail(other.tail), freeHead(other.freeHead), size_(other.size_) {}
+
+    FreeList(FreeList&& other) noexcept
+        : next_indices(std::move(other.next_indices)), prev_indices(std::move(other.prev_indices)), 
+          next_free(std::move(other.next_free)), data(std::move(other.data)),
+          head(other.head), tail(other.tail), freeHead(other.freeHead), size_(other.size_) {
+        other.head = other.tail = other.freeHead = SIZE_MAX;
+        other.size_ = 0;
+    }
+
+    FreeList& operator=(const FreeList& other) {
+        if (this != &other) {
+            next_indices = other.next_indices;
+            prev_indices = other.prev_indices;
+            next_free = other.next_free;
+            data = other.data;
+            head = other.head;
+            tail = other.tail;
+            freeHead = other.freeHead;
+            size_ = other.size_;
+        }
+        return *this;
+    }
+
+    FreeList& operator=(FreeList&& other) noexcept {
+        if (this != &other) {
+            next_indices = std::move(other.next_indices);
+            prev_indices = std::move(other.prev_indices);
+            next_free = std::move(other.next_free);
+            data = std::move(other.data);
+            head = other.head;
+            tail = other.tail;
+            freeHead = other.freeHead;
+            size_ = other.size_;
+            
+            other.head = other.tail = other.freeHead = SIZE_MAX;
+            other.size_ = 0;
+        }
+        return *this;
+    }
+
+    // Iterator methods
     iterator begin() { return iterator(this, head); }
     const_iterator begin() const { return const_iterator(this, head); }
     const_iterator cbegin() const noexcept { return const_iterator(this, head); }
@@ -437,165 +360,114 @@ public:
     const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
     const_reverse_iterator crend() const noexcept { return const_reverse_iterator(cbegin()); }
 
-    FreeList() : nodes(), head(SIZE_MAX), tail(SIZE_MAX), freeHead(SIZE_MAX), size_(0) {}
+    // Element access
+    const T& front() const { return data[head]; }
+    const T& back() const { return data[tail]; }
+    T& front() { return data[head]; }
+    T& back() { return data[tail]; }
 
-    FreeList(size_t count) : FreeList() {
-	reserve(count);
-
-        for (size_t i = 0; i < count; ++i) {
-            emplace_back(T{});
-        }
-    }
-
-    template <typename U>
-    FreeList(size_t count, U&& value) : FreeList() {
-	reserve(count);
-
-        for (size_t i = 0; i < count; ++i) {
-            emplace_back(std::forward<U>(value));
-        }
-    }
-
-    template <typename Iterator>
-    FreeList(
-        Iterator first,
-        Iterator last,
-        typename std::enable_if<!std::is_same<typename std::iterator_traits<Iterator>::value_type, T>::value>::type* = nullptr)
-        : FreeList()
-    {
-        auto n = std::distance(first, last);
-        reserve(n);
-    
-        for (auto it = first; it != last; ++it) {
-            emplace_back(*it);
-        }
-    }
-    
-    // Overload the constructor for the case where Iterator's value_type is the same as T
-    template <typename Iterator>
-    FreeList(
-        Iterator first,
-        Iterator last,
-        typename std::enable_if<std::is_same<typename std::iterator_traits<Iterator>::value_type, T>::value>::type* = nullptr)
-        : FreeList()
-    {
-        auto n = std::distance(first, last);
-        reserve(n);
-    
-        for (auto it = first; it != last; ++it) {
-            emplace_back(*it);
-        }
-    }
-
-    FreeList(std::initializer_list<T> init) : FreeList() {
-	reserve(init.size());
-
-        for (const auto& value : init) {
-            emplace_back(value);
-        }
-    }
-
-    ~FreeList() = default;
-
-    FreeList(const FreeList& other) = default;
-    FreeList(FreeList&& other) noexcept = default;
-    FreeList& operator=(const FreeList& other) = default;
-    FreeList& operator=(FreeList&& other) noexcept = default;
-
-
-    template <typename Compare = std::less<T> >
-    void sort(const Compare& comp = Compare()) {
-        if (empty()) return;
-
-	bottomUpMergeSortRange(head, tail, comp);
-    }
-
-    template <typename Compare = std::less<T> >
-    void sort(const const_iterator start,
-	      const const_iterator _end,
-	      const Compare& comp = Compare())
-    {
-        if (empty() || start == end() || start == _end) return;
-
-        size_t start_idx = start.getIndex();
-        size_t end_idx = (_end == end()) ? tail : _end.prev().getIndex();
-
-	bottomUpMergeSortRange(start_idx, end_idx, comp);
-    }
+    // Capacity
+    bool empty() const noexcept { return head == SIZE_MAX && tail == SIZE_MAX; }
+    size_t size() const noexcept { return size_; }
+    size_t capacity() const noexcept { return data.capacity(); }
 
     void reserve(size_t count) {
-        nodes.reserve(count);
+        data.reserve(count);
+        next_indices.reserve(count);
+        prev_indices.reserve(count);
+        next_free.reserve(count);
     }
 
+    void shrink_to_fit() {
+        data.shrink_to_fit();
+        next_indices.shrink_to_fit();
+        prev_indices.shrink_to_fit();
+        next_free.shrink_to_fit();
+    }
+
+    void clear() {
+        head = tail = freeHead = SIZE_MAX;
+        size_ = 0;
+        data.clear();
+        next_indices.clear();
+        prev_indices.clear();
+        next_free.clear();
+    }
+
+    // Modifiers
     template <typename U>
-    void push_front(U&& data) {
-        size_t index = allocateNode(std::forward<U>(data));
-    
+    void push_front(U&& value) {
+        size_t index = allocateNode(std::forward<U>(value));
         if (head != SIZE_MAX) {
-            nodes[index].next = head;
-            nodes[head].prev = index;
+            next_indices[index] = head;
+            prev_indices[head] = index;
         }
-
         head = index;
-
         if (tail == SIZE_MAX) {
             tail = index;
         }
     }
-    
+
     template <typename U>
-    void push_back(U&& data) {
-        size_t index = allocateNode(std::forward<U>(data));
-    
+    void push_back(U&& value) {
+        size_t index = allocateNode(std::forward<U>(value));
         if (head == SIZE_MAX) {
             head = index;
             tail = index;
         } else {
-            nodes[tail].next = index;
-            nodes[index].prev = tail;
+            next_indices[tail] = index;
+            prev_indices[index] = tail;
             tail = index;
         }
     }
 
     template<class... Args>
     iterator emplace(const_iterator pos, Args&&... args) {
-
+        T value(std::forward<Args>(args)...);
+        
         if (pos == end()) {
-            return insert(end(), T(std::forward<Args>(args)...));
+            size_t index = allocateNode(std::move(value));
+            if (tail != SIZE_MAX) {
+                next_indices[tail] = index;
+                prev_indices[index] = tail;
+            } else {
+                head = index;
+            }
+            tail = index;
+            return iterator(this, index);
         }
 
         size_t currentIndex = pos.getIndex();
+        size_t newIndex = allocateNode(std::move(value));
 
-        size_t newIndex = allocateNode(T(std::forward<Args>(args)...));
+        next_indices[newIndex] = currentIndex;
+        prev_indices[newIndex] = prev_indices[currentIndex];
 
-        nodes[newIndex].next = currentIndex;
-        nodes[newIndex].prev = nodes[currentIndex].prev;
-
-        if (nodes[currentIndex].prev != SIZE_MAX) {
-            nodes[nodes[currentIndex].prev].next = newIndex;
+        if (prev_indices[currentIndex] != SIZE_MAX) {
+            next_indices[prev_indices[currentIndex]] = newIndex;
         } else {
             head = newIndex;
         }
 
-        nodes[currentIndex].prev = newIndex;
-
+        prev_indices[currentIndex] = newIndex;
         return iterator(this, newIndex);
     }
 
     template<typename... Args>
     T& emplace_back(Args&&... args) {
-        size_t index = allocateNode(T(std::forward<Args>(args)...));
-
+        T value(std::forward<Args>(args)...);
+        size_t index = allocateNode(std::move(value));
+        
         if (head == SIZE_MAX) {
             head = index;
             tail = index;
         } else {
-            nodes[tail].next = index;
-            nodes[index].prev = tail;
+            next_indices[tail] = index;
+            prev_indices[index] = tail;
             tail = index;
         }
-
-        return nodes[index].data;
+        
+        return data[index];
     }
 
     iterator erase(iterator pos) {
@@ -616,123 +488,105 @@ public:
         while (first != last) {
             first = erase(first);
         }
-
         return last;
     }
 
     iterator erase(const_iterator first, const_iterator last) {
         while (first != last) {
-            first = erase(first);
+            const_iterator current = first++;
+            remove(current.getIndex());
         }
-
         return iterator(this, last.getIndex());
     }
 
-    iterator find(const T& value) {
-        for (iterator it = begin(); it != end(); ++it) {
-            if (*it == value) {
-            return it;
-            }
-        }
-        return end();
-    }
-
+    // Fixed insert functions
     template <typename U>
-    iterator insert(const_iterator it, U&& data) {
-        size_t newIndex = allocateNode(std::forward<U>(data));
-    
+    iterator insert(const_iterator it, U&& value) {
         if (!(it == end())) {
             size_t currentIndex = it.getIndex();
-    
-            nodes[newIndex].next = currentIndex;
-            nodes[newIndex].prev = nodes[currentIndex].prev;
-    
-            if (nodes[currentIndex].prev != SIZE_MAX) {
-                nodes[nodes[currentIndex].prev].next = newIndex;
-            } else {
-                head = newIndex;
-            }
-    
-            nodes[currentIndex].prev = newIndex;
-        } else {
+            size_t newIndex = allocateNode(std::forward<U>(value));
+            
+            next_indices[newIndex] = currentIndex;
+            prev_indices[newIndex] = prev_indices[currentIndex];
 
-            if (tail != SIZE_MAX) {
-                nodes[tail].next = newIndex;
-                nodes[newIndex].prev = tail;
+            if (prev_indices[currentIndex] != SIZE_MAX) {
+                next_indices[prev_indices[currentIndex]] = newIndex;
             } else {
                 head = newIndex;
             }
+            
+            prev_indices[currentIndex] = newIndex;
+            return iterator(this, newIndex);
+        } else {
+            size_t newIndex = allocateNode(std::forward<U>(value));
+            
+            if (tail != SIZE_MAX) {
+                next_indices[tail] = newIndex;
+                prev_indices[newIndex] = tail;
+            } else {
+                head = newIndex;
+            }
+            
             tail = newIndex;
+            return iterator(this, newIndex);
         }
-    
-        return iterator(this, newIndex);
     }
 
-    iterator insert(const_iterator it, const T& data) {
-        size_t newIndex = allocateNode(data);
-    
-        if (!(it == end())) {
-            size_t currentIndex = it.getIndex();
-    
-            nodes[newIndex].next = currentIndex;
-            nodes[newIndex].prev = nodes[currentIndex].prev;
-    
-            if (nodes[currentIndex].prev != SIZE_MAX) {
-                nodes[nodes[currentIndex].prev].next = newIndex;
-            } else {
-                head = newIndex;
-            }
-    
-            nodes[currentIndex].prev = newIndex;
-        } else {
+    // Add explicit implementation for const T& 
+    iterator insert(const_iterator it, const T& value) {
+        return insert<const T&>(it, value);
+    }
 
-            if (tail != SIZE_MAX) {
-                nodes[tail].next = newIndex;
-                nodes[newIndex].prev = tail;
-            } else {
-                head = newIndex;
-            }
-            tail = newIndex;
-        }
-    
-        return iterator(this, newIndex);
+    // Add direct support for brace initialization for pairs
+    template <typename First, typename Second>
+    iterator insert(const_iterator it, const std::pair<First, Second>& value) {
+        return insert<const std::pair<First, Second>&>(it, value);
+    }
+
+    // Add direct support for brace initialization in general
+    template <typename... Args>
+    iterator insert(const_iterator it, Args&&... args) {
+        return emplace(it, std::forward<Args>(args)...);
     }
 
     template<class InputIt>
     iterator insert(const_iterator pos, InputIt first, InputIt last) {
-        size_t currentIndex = pos.getIndex();
+        if (first == last) return iterator(this, pos.getIndex());
+        
         size_t firstNewIndex = SIZE_MAX;
-
-        while (first != last) {
-            size_t newIndex = allocateNode(*first++);
-
+        size_t currentIndex = pos.getIndex();
+        
+        for (auto it = first; it != last; ++it) {
+            size_t newIndex = allocateNode(*it);
+            
             if (firstNewIndex == SIZE_MAX) {
                 firstNewIndex = newIndex;
             }
-
+            
             if (currentIndex != SIZE_MAX) {
-                nodes[newIndex].next = currentIndex;
-                nodes[newIndex].prev = nodes[currentIndex].prev;
-
-                if (nodes[currentIndex].prev != SIZE_MAX) {
-                    nodes[nodes[currentIndex].prev].next = newIndex;
+                // Insert before currentIndex
+                next_indices[newIndex] = currentIndex;
+                prev_indices[newIndex] = prev_indices[currentIndex];
+                
+                if (prev_indices[currentIndex] != SIZE_MAX) {
+                    next_indices[prev_indices[currentIndex]] = newIndex;
                 } else {
                     head = newIndex;
                 }
-
-                nodes[currentIndex].prev = newIndex;
-                currentIndex = newIndex;
+                
+                prev_indices[currentIndex] = newIndex;
             } else {
+                // Insert at end
                 if (tail != SIZE_MAX) {
-                    nodes[tail].next = newIndex;
-                    nodes[newIndex].prev = tail;
+                    next_indices[tail] = newIndex;
+                    prev_indices[newIndex] = tail;
                 } else {
                     head = newIndex;
                 }
                 tail = newIndex;
             }
         }
-
+        
         return iterator(this, firstNewIndex);
     }
 
@@ -740,64 +594,78 @@ public:
         return insert(pos, ilist.begin(), ilist.end());
     }
 
-    void swap(FreeList& other) noexcept {
-        std::swap(head, other.head);
-        std::swap(tail, other.tail);
-        std::swap(freeHead, other.freeHead);
-        nodes.swap(other.nodes);
-        std::swap(size_, other.size_);
-    }
-
-    const T& front() const {
-        return nodes[head].data;
-    }
-
-    const T& back() const {
-        return nodes[tail].data;
-    }
-
-    T& front() {
-        return nodes[head].data;
-    }
-
-    T& back() {
-        return nodes[tail].data;
-    }
-
     void pop_front() {
         if (head == SIZE_MAX) return;
-    
         remove(head);
     }
 
     void pop_back() {
-        if (tail == SIZE_MAX) { 
-            return;
-        }
-    
+        if (tail == SIZE_MAX) return;
         remove(tail);
     }
 
-    bool empty() const noexcept {
-        return head == SIZE_MAX && tail == SIZE_MAX;
+    void swap(FreeList& other) noexcept {
+        std::swap(head, other.head);
+        std::swap(tail, other.tail);
+        std::swap(freeHead, other.freeHead);
+        std::swap(size_, other.size_);
+        next_indices.swap(other.next_indices);
+        prev_indices.swap(other.prev_indices);
+        next_free.swap(other.next_free);
+        data.swap(other.data);
     }
 
-    size_t size() const noexcept {
-        return size_;
+    // Find
+    iterator find(const T& value) {
+        for (iterator it = begin(); it != end(); ++it) {
+            if (*it == value) {
+                return it;
+            }
+        }
+        return end();
     }
 
-    size_t capacity() const noexcept {
-        return nodes.capacity();
+    // Sorting
+    template <typename Compare>
+    void sort_impl(size_t start_idx, size_t end_idx, Compare& comp) {
+        // Collect values and indices for the range
+        std::vector<std::pair<T, size_t>> values_with_indices;
+        values_with_indices.reserve(size_);
+        
+        for (size_t curr = start_idx; curr != end_idx; curr = next_indices[curr]) {
+            values_with_indices.emplace_back(std::move(data[curr]), curr);
+        }
+        
+        if (values_with_indices.size() <= 1) return;
+        
+        // Sort by value using std::sort
+        std::sort(values_with_indices.begin(), values_with_indices.end(),
+                [&comp](const auto& a, const auto& b) {
+                    return comp(a.first, b.first);
+                });
+        
+        // Restore values to original nodes in sorted order
+        size_t i = 0;
+        for (size_t curr = start_idx; curr != end_idx; curr = next_indices[curr]) {
+            auto& [value, original_idx] = values_with_indices[i++];
+            data[curr] = std::move(value);
+        }
     }
 
-    void shrink_to_fit() {
-        nodes.shrink_to_fit();
+    template <typename Compare = std::less<T>>
+    void sort(const Compare& comp = Compare()) {
+        if (empty() || size_ <= 1) return;
+        sort_impl(head, SIZE_MAX, comp);
     }
 
-    void clear() {
-        head = tail = freeHead = SIZE_MAX;
-        size_ = 0;
-        nodes.clear();
+    template <typename Compare = std::less<T>>
+    void sort(const_iterator start, const_iterator end, const Compare& comp = Compare()) {
+        if (empty() || start == this->end() || start == end) return;
+        
+        size_t start_idx = start.getIndex();
+        size_t end_idx = (end == this->end()) ? SIZE_MAX : end.getIndex();
+        
+        sort_impl(start_idx, end_idx, comp);
     }
 };
 

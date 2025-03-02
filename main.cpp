@@ -10,14 +10,15 @@ int main() {
 	try {
 		std::vector<int> v;
 
-		for (int i = 10000000; i >= 0; --i) {
+		for (int i = 20000000; i >= 0; --i) {
 			v.emplace_back(i);
 		}
 
 		papi::event_set<
 			PAPI_BR_INS,
-			PAPI_BR_MSP,
-			PAPI_BR_TKN
+			PAPI_BR_TKN,
+			PAPI_BR_MSP
+
 		> events;
 
 
@@ -26,6 +27,12 @@ int main() {
 
 			std::list<int> l(v.begin(), v.end());
 			l.sort();
+				
+			for (int& i : l) {
+				i = i * i;
+			}
+
+			l.clear();
 
 			events.stop_counters();
 		}
@@ -42,6 +49,12 @@ int main() {
 
 			FreeList<int> fl(v.begin(), v.end());
 			fl.sort();
+
+			for (int& i : fl) {
+				i = i * i;
+			}
+
+			fl.clear();
 
 			events.stop_counters();
 		}
