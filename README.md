@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
 	std::cout
 		<< "Total IPC = "
 		<< (double) events.get<PAPI_TOT_INS>().counter() /
-		<< (double) events.get<PAPI_TOT_CYC>().counter()
+		   (double) events.get<PAPI_TOT_CYC>().counter()
 		<< std::endl;
 
 	return 0;
