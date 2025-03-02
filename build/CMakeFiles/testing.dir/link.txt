@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/testing.dir/link.d CMakeFiles/testing.dir/main.cpp.o -o testing  -Wl,-rpath,/usr/local/lib /usr/local/lib/libpapi.so
