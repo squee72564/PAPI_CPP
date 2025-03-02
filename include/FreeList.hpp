@@ -447,11 +447,12 @@ public:
         }
     }
 
-    FreeList(size_t count, const T& value) : FreeList() {
+    template <typename U>
+    FreeList(size_t count, U&& value) : FreeList() {
 	reserve(count);
 
         for (size_t i = 0; i < count; ++i) {
-            emplace_back(value);
+            emplace_back(std::forward<U>(value));
         }
     }
 
