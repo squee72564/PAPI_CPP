@@ -443,7 +443,7 @@ public:
 	reserve(count);
 
         for (size_t i = 0; i < count; ++i) {
-            push_back(T{});
+            emplace_back(T{});
         }
     }
 
@@ -451,7 +451,7 @@ public:
 	reserve(count);
 
         for (size_t i = 0; i < count; ++i) {
-            push_back(value);
+            emplace_back(value);
         }
     }
 
@@ -466,7 +466,7 @@ public:
         reserve(n);
     
         for (auto it = first; it != last; ++it) {
-            push_back(*it);
+            emplace_back(*it);
         }
     }
     
@@ -482,7 +482,7 @@ public:
         reserve(n);
     
         for (auto it = first; it != last; ++it) {
-            push_back(*it);
+            emplace_back(*it);
         }
     }
 
@@ -490,7 +490,7 @@ public:
 	reserve(init.size());
 
         for (const auto& value : init) {
-            push_back(value);
+            emplace_back(value);
         }
     }
 
