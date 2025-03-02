@@ -60,18 +60,18 @@ namespace papi
                 explicit event_set()
                 {
                         int ret{};
-                        if ((ret = PAPI_library_init(PAPI_VER_CURRENT)) != PAPI_VER_CURRENT) {
+                        if ((ret = ::PAPI_library_init(PAPI_VER_CURRENT)) != PAPI_VER_CURRENT) {
                                 throw std::runtime_error(
                                         std::string("Papi library failed to init with error: ")
-                                        + PAPI_strerror(ret)
+                                        + ::PAPI_strerror(ret)
                                 );
                         }
 
                         _eventset = PAPI_NULL;
-                        if ((ret = PAPI_create_eventset(&_eventset)) != PAPI_OK) {
+                        if ((ret = ::PAPI_create_eventset(&_eventset)) != PAPI_OK) {
                                 throw std::runtime_error(
                                         std::string("Papi failed to create eventset: ")
-                                        + PAPI_strerror(ret)
+                                        + ::PAPI_strerror(ret)
                                 );
                         }
 
@@ -80,18 +80,18 @@ namespace papi
 
                 ~event_set()
                 {
-                        PAPI_cleanup_eventset(_eventset);
-                        PAPI_destroy_eventset(&_eventset);
+                        ::PAPI_cleanup_eventset(_eventset);
+                        ::PAPI_destroy_eventset(&_eventset);
                 }
 
                 void start_counters()
                 {
                         int ret{};
 
-                        if ((ret = PAPI_start(_eventset)) != PAPI_OK) {
+                        if ((ret = ::PAPI_start(_eventset)) != PAPI_OK) {
                                 throw std::runtime_error(
                                         std::string("Papi failed to start counters: ")
-                                        + PAPI_strerror(ret)
+                                        + ::PAPI_strerror(ret)
                                 );
                         }
                 }
@@ -99,10 +99,10 @@ namespace papi
                 void reset_counters()
                 {
                         int ret{};
-                        if ((ret = PAPI_reset(_eventset)) != PAPI_OK) {
+                        if ((ret = ::PAPI_reset(_eventset)) != PAPI_OK) {
                                 throw std::runtime_error(
                                         std::string("Papi failed to reset counters: ")
-                                        + PAPI_strerror(ret)
+                                        + ::PAPI_strerror(ret)
                                 );
                         }
                 }
@@ -110,10 +110,10 @@ namespace papi
                 void stop_counters()
                 {
                         int ret{};
-                        if ((ret =PAPI_stop(_eventset, _counters.data())) != PAPI_OK) {
+                        if ((ret = ::PAPI_stop(_eventset, _counters.data())) != PAPI_OK) {
                                 throw std::runtime_error(
                                         std::string("Papi failed to stop counters: ")
-                                        + PAPI_strerror(ret)
+                                        + ::PAPI_strerror(ret)
                                 );
                         }
                 }
@@ -150,12 +150,12 @@ namespace papi
                         int ret{};
                         static constexpr const std::array<event_code, sizeof...(_Events)> events = {{_Events...}};
                         for (event_code event : events) {
-                                if ((ret = PAPI_add_event(_eventset, event)) != PAPI_OK) {
+                                if ((ret = ::PAPI_add_event(_eventset, event)) != PAPI_OK) {
                                         throw std::runtime_error(
                                                 std::string("Papi failed to add event ")
 						+ get_event_code_name(event)
 						+ std::string(" to event set: ")
-                                                + PAPI_strerror(ret)
+                                                + ::PAPI_strerror(ret)
                                         );
                                 }
                         }
