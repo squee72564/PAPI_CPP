@@ -1,6 +1,4 @@
-<div align="center">
-# PapiCPP: A C++ Wrapper for PAPI
-</div>
+<h1 style="text-align: center;"> PapiCPP: A C++ Wrapper for PAPI </h1>
 
 PapiCPP is a C++ wrapper for the Performance API (PAPI), providing an easy and convenient interface to access hardware performance counters. This library allows you to use PAPI's event and counter functionalities in a C++-friendly way, abstracting away low-level details and offering features like event sets, counter tracking, and printing event statistics.
 
