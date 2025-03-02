@@ -1,3 +1,0 @@
-/home/alan/Programming-Projects/C++/papiCPP/build/CMakeFiles/testing.dir
-/home/alan/Programming-Projects/C++/papiCPP/build/CMakeFiles/edit_cache.dir
-/home/alan/Programming-Projects/C++/papiCPP/build/CMakeFiles/rebuild_cache.dir
