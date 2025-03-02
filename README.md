@@ -17,6 +17,41 @@ Before using PapiCPP, ensure that you have the PAPI library installed on your sy
 * PAPI version 5.x or later is required.
 * A C++17 compatible compiler.
 
+## Checking Available PAPI Preset Events
+PAPI comes with preset events. Supported preset events will depend on your computers architecture.
+To check available preset events, run the following:
+
+`papi_avail -a`
+
+## Using PapiCPP
+PapiCPP uses templates to select which preset events you want to benchmark:
+
+`papi::event_set<PAPI_L1_DCA> events; // This will count L1 data cache accesses`
+
+To start counting:
+
+`events.start_counters();`
+
+To stop counting:
+
+`events.stop_counters();`
+
+To reset counters:
+
+`events.reset_counters();`
+
+To print a single counter:
+
+`std::cout << events.get<PAPI_L1_DCA>.counter() << std::end; // Use event code`
+
+or
+
+`std::cout << events.at<0>.counter() << std::endl; // Use event index`
+
+To print all counters:
+
+`std::cout << events << std::endl;`
+
 ## Building and Testing
 
 1. First create a build folder in the base directory and cd into it
